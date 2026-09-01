@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "donutsmp-transaction-tracker",
+  "version": "${version}",
+  "name": "DonutSMP Transaction Tracker",
+  "description": "Observation-based transaction tracker for *.donutsmp.net with FastAPI sync.",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.donutsmp.tracker.DonutTrackerClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}
