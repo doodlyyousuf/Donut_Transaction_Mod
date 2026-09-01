@@ -29,16 +29,49 @@ public final class SyncService {
             t.setDaemon(true);
             return t;
         });
+        exec.execute(SyncService::ensureApiKey);
         exec.scheduleWithFixedDelay(SyncService::syncOnce,
                 config.syncIntervalSeconds, config.syncIntervalSeconds, TimeUnit.SECONDS);
     }
 
     public static void requestImmediateSync() { syncOnce(); }
 
+    /** Pull the server-generated key once and save it to the mod config. */
+    public static synchronized void ensureApiKey() {
+        TrackerConfig live = cfg != null ? cfg : TrackerConfig.load();
+        if (live.hasApiKey()) {
+            cfg = live;
+            return;
+        }
+        if (http == null) {
+            http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(live.backendUrl + "/api/bootstrap"))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() != 200) return;
+            JsonObject json = GSON.fromJson(res.body(), JsonObject.class);
+            if (json == null || !json.has("api_key")) return;
+            String key = json.get("api_key").getAsString();
+            if (key == null || key.isBlank()) return;
+            live.apiKey = key;
+            live.save();
+            cfg = live;
+            DonutTrackerClient.LOGGER.info("[TransactionTracker] API key saved from backend");
+        } catch (Exception ignored) {
+        }
+    }
+
     private static synchronized void syncOnce() {
         if (syncing || cfg == null) return;
         syncing = true;
         try {
+            ensureApiKey();
+            if (!cfg.hasApiKey()) return;
             List<String> batch = state.queue == null ? List.of() : List.of();
             // (queue lives in TrackerState; expose via accessor below)
             batch = drainQueue();

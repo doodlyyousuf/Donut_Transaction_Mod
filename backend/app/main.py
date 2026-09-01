@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
-from app.config import settings
+from app.config import settings, ensure_api_key
 from app.database import engine, Base
 from app.api.routes import router, auth_router, ws_router, limiter
 from app.dashboard import app as dashboard_app  # noqa: F401 (module reference)
@@ -11,6 +11,7 @@ from app.dashboard import app as dashboard_app  # noqa: F401 (module reference)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     import app.models  # register all models with Base
+    ensure_api_key()
     if settings.auto_create_tables:      # dev convenience; prod uses Alembic
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

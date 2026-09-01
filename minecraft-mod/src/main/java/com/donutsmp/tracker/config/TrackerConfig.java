@@ -9,7 +9,7 @@ import java.nio.file.*;
 public class TrackerConfig {
     public String backendUrl = "http://localhost:8000";
     public int webPort = 8765;
-    public String apiKey = "";           // X-API-Key; never hardcode a real key
+    public String apiKey = "";           // filled from GET /api/bootstrap on first run
     public boolean trackingEnabled = true;
     public boolean autoStartWeb = false;
     public boolean saveRawMessages = true;
@@ -28,10 +28,22 @@ public class TrackerConfig {
                 return GSON.fromJson(Files.readString(FILE), TrackerConfig.class);
             }
             TrackerConfig c = new TrackerConfig();
-            Files.writeString(FILE, GSON.toJson(c));
+            c.save();
             return c;
         } catch (IOException e) {
             return new TrackerConfig();
         }
+    }
+
+    public void save() {
+        try {
+            Files.createDirectories(DIR);
+            Files.writeString(FILE, GSON.toJson(this));
+        } catch (IOException ignored) {
+        }
+    }
+
+    public boolean hasApiKey() {
+        return apiKey != null && !apiKey.isBlank();
     }
 }

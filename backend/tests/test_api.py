@@ -63,3 +63,9 @@ async def test_filters_and_pagination(client):
 
     r3 = await client.get("/api/transactions", params={"item": "nope"}, headers=headers)
     assert r3.json()["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_bootstrap_returns_generated_key(client):
+    r = await client.get("/api/bootstrap")
+    assert r.status_code == 200 and r.json()["api_key"] == "test-key"

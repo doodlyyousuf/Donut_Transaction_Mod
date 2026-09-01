@@ -55,7 +55,7 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-# Edit .env: set DATABASE_URL, API_KEY
+# Edit .env: set DATABASE_URL (API_KEY is generated on first start)
 alembic upgrade head
 pytest
 uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -89,7 +89,7 @@ gradlew.bat build
 
 ```env
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/donutsmp
-API_KEY=your-secret-key-here
+API_KEY=
 HOST=127.0.0.1
 PORT=8000
 DASHBOARD_PORT=8765
@@ -98,7 +98,9 @@ AUTO_CREATE_TABLES=0
 CORS_ORIGINS=http://localhost:8765,http://127.0.0.1:5173
 ```
 
-When you host FastAPI online, set `HOST=0.0.0.0`, point `DATABASE_URL` at your hosted Postgres, generate a strong `API_KEY`, and set `CORS_ORIGINS` to your dashboard origin (or `*` while testing). The Minecraft mod does not use CORS; it only needs `backendUrl` and the same `apiKey`.
+Leave `API_KEY` empty. The backend generates one on first start and writes it into `.env`. The Minecraft mod (and local dashboard) call `GET /api/bootstrap` from localhost and save that key automatically.
+
+When you host FastAPI online, set `HOST=0.0.0.0`, point `DATABASE_URL` at your hosted Postgres, and set `CORS_ORIGINS` to your dashboard origin (or `*` while testing). Bootstrap only works on the server machine, so a remote Minecraft client must use the same `apiKey` as the hosted `API_KEY`.
 
 ### Minecraft Mod Config
 
@@ -108,7 +110,7 @@ Generated at: `.minecraft/config/donutsmp-transaction-tracker/donutsmp-transacti
 {
   "backendUrl": "http://localhost:8000",
   "webPort": 8765,
-  "apiKey": "your-secret-key-here",
+  "apiKey": "",
   "trackingEnabled": true,
   "autoStartWeb": false,
   "syncIntervalSeconds": 10,
@@ -116,7 +118,7 @@ Generated at: `.minecraft/config/donutsmp-transaction-tracker/donutsmp-transacti
 }
 ```
 
-After you deploy the API, change `backendUrl` to that HTTPS URL (for example `https://api.example.com`) and set `apiKey` to the same value as `API_KEY` on the server. The mod keeps working offline via `queue.jsonl` and drains when the hosted API is reachable.
+You can leave `apiKey` blank while the backend is on this PC. After you deploy the API, change `backendUrl` to that HTTPS URL (for example `https://api.example.com`) and set `apiKey` to the hosted `API_KEY`. The mod keeps working offline via `queue.jsonl` and drains when the hosted API is reachable.
 
 ## In-Game Commands
 
@@ -133,6 +135,7 @@ After you deploy the API, change `backendUrl` to that HTTPS URL (for example `ht
 ### Public
 
 - `GET /api/health` - Health check
+- `GET /api/bootstrap` - Localhost-only: return (or generate) the API key
 - `GET /api/transactions/{id}` - Get single transaction
 - `GET /api/orders` - List orders
 - `GET /api/orders/{id}` - Get order details

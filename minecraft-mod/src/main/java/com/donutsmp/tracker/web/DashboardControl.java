@@ -2,6 +2,7 @@ package com.donutsmp.tracker.web;
 
 import com.donutsmp.tracker.DonutTrackerClient;
 import com.donutsmp.tracker.config.TrackerConfig;
+import com.donutsmp.tracker.sync.SyncService;
 import net.minecraft.text.Text;
 import net.minecraft.util.Util;
 
@@ -27,7 +28,7 @@ public final class DashboardControl {
     public static int openDashboard(net.minecraft.fabric.api.client.command.v2.FabricClientCommandSource src) {
         TrackerConfig cfg = TrackerConfig.load();
         String url = "http://localhost:" + cfg.webPort;
-        post(cfg, "/api/dashboard/start");
+        post("/api/dashboard/start");
         Util.getOperatingSystem().open(URI.create(url));
         src.sendFeedback(Text.literal(
                 "§aTransaction Tracker Web Dashboard started: §f" + url));
@@ -36,25 +37,27 @@ public final class DashboardControl {
 
     public static int stopDashboard(net.minecraft.fabric.api.client.command.v2.FabricClientCommandSource src) {
         TrackerConfig cfg = TrackerConfig.load();
-        post(cfg, "/api/dashboard/stop");
+        post("/api/dashboard/stop");
         src.sendFeedback(Text.literal("§cTransaction Tracker Web Dashboard stopped."));
         return 1;
     }
 
     public static int restartDashboard(net.minecraft.fabric.api.client.command.v2.FabricClientCommandSource src) {
         TrackerConfig cfg = TrackerConfig.load();
-        post(cfg, "/api/dashboard/restart");
+        post("/api/dashboard/restart");
         src.sendFeedback(Text.literal("§eTransaction Tracker Web Dashboard restarting..."));
         return 1;
     }
 
-    private static void post(TrackerConfig cfg, String path) {
+    private static void post(String path) {
         CompletableFuture.runAsync(() -> {
             try {
+                SyncService.ensureApiKey();
+                TrackerConfig live = TrackerConfig.load();
                 HttpClient.newHttpClient().send(HttpRequest.newBuilder()
-                        .uri(URI.create(cfg.backendUrl + path))
+                        .uri(URI.create(live.backendUrl + path))
                         .timeout(Duration.ofSeconds(5))
-                        .header("X-API-Key", cfg.apiKey)
+                        .header("X-API-Key", live.apiKey)
                         .POST(HttpRequest.BodyPublishers.noBody()).build(),
                         HttpResponse.BodyHandlers.discarding());
             } catch (Exception e) {

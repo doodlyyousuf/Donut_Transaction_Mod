@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.config import settings
+from app.config import settings, ensure_api_key
 from app.database import get_db
 from app.models import Transaction, Order, Player, TransactionEvent
 from app.schemas import BulkIn, BulkResult, TransactionOut, StatsOut
@@ -22,6 +22,11 @@ router = APIRouter(prefix="/api")
 auth_router = APIRouter(prefix="/api")  # auth-protected endpoints
 
 _dashboard_proc: Optional[subprocess.Popen] = None
+
+
+def _is_loopback(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
 # ---------- §34 authentication ----------
@@ -41,6 +46,18 @@ async def require_api_key(
 @router.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.get("/bootstrap")
+async def bootstrap_api_key(request: Request):
+    """Hand the generated API key to the local Minecraft mod / dashboard.
+
+    Only the machine running the API can call this (loopback). Remote clients
+    still set X-API-Key themselves.
+    """
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="Bootstrap is only available on localhost")
+    return {"api_key": ensure_api_key()}
 
 
 def _to_row(t) -> dict:
