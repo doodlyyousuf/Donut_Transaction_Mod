@@ -53,3 +53,76 @@ async def link_delivery(db: AsyncSession, tx: Transaction) -> bool:
         order_id=best.id, transaction_id=tx.id, event_type="ORDER_DELIVERY",
         quantity=tx.quantity, player=tx.seller_username, raw_message=tx.raw_message))
     return True
+
+
+def _normalize_item(name: str | None) -> str:
+    """DonutSMP is inconsistent about plurals ("Emeralds" when ordering,
+    "Emerald" when the order completes), so compare without the trailing s."""
+    return (name or "").strip().rstrip("s").lower()
+
+
+async def _open_order(db: AsyncSession, tx: Transaction, lenient: bool = False) -> Order | None:
+    """Newest still-open order for this buyer, filtered by item when possible."""
+    owner = tx.buyer_username or tx.transaction_owner
+    stmt = (
+        select(Order)
+        .where(Order.owner_username == owner)
+        .where(Order.status.in_(("PENDING", "PARTIALLY_FILLED")))
+        .order_by(Order.created_at.desc())
+    )
+    if not lenient:
+        stmt = stmt.where(Order.item_name == tx.item_name)
+        return (await db.execute(stmt)).scalars().first()
+
+    want = _normalize_item(tx.item_name)
+    candidates = (await db.execute(stmt)).scalars().all()
+    for order in candidates:
+        if _normalize_item(order.item_name) == want:
+            return order
+    return None
+
+
+async def apply_order_lifecycle(db: AsyncSession, tx: Transaction) -> bool:
+    """Create an Order from an ORDER_CREATED event and close it on ORDER_COMPLETED.
+
+    This is what makes the Orders view populate from chat alone; deliveries are
+    already attached by link_delivery."""
+    if not tx.item_name:
+        return False
+
+    if tx.transaction_type == "ORDER_CREATED":
+        existing = await _open_order(db, tx)
+        if existing is not None:
+            # Same order re-announced: widen the target instead of duplicating.
+            if tx.quantity:
+                existing.quantity = max(existing.quantity or 0, tx.quantity)
+                existing.remaining_quantity = max(
+                    (existing.quantity or 0) - (existing.fulfilled_quantity or 0), 0)
+            return False
+
+        db.add(Order(
+            owner_username=tx.buyer_username or tx.transaction_owner,
+            buyer_username=tx.buyer_username or tx.transaction_owner,
+            item_name=tx.item_name,
+            quantity=tx.quantity,
+            fulfilled_quantity=0,
+            remaining_quantity=tx.quantity,
+            unit_price=tx.unit_price,
+            total_price=tx.total_price,
+            status="PENDING",
+        ))
+        await db.flush()
+        return True
+
+    if tx.transaction_type == "ORDER_COMPLETED":
+        order = await _open_order(db, tx, lenient=True)
+        if order is None:
+            return False
+        order.fulfilled_quantity = order.quantity or order.fulfilled_quantity
+        order.remaining_quantity = 0
+        order.status = "COMPLETED"
+        order.completed_at = datetime.utcnow()
+        tx.order_id = order.id
+        return True
+
+    return False

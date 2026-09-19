@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 TransactionType = Literal[
     "BUY", "SELL", "LIST", "ORDER_CREATED", "ORDER_FILLED", "ORDER_COMPLETED",
-    "ORDER_DELIVERY", "ORDER_CANCELLED", "PAYMENT_SENT", "PAYMENT_RECEIVED", "UNKNOWN"]
+    "ORDER_DELIVERY", "ORDER_CANCELLED", "PAYMENT_SENT", "PAYMENT_RECEIVED", "BALANCE", "UNKNOWN"]
 
 
 class TransactionIn(BaseModel):
@@ -25,11 +25,11 @@ class TransactionIn(BaseModel):
     item_name: Optional[str] = None
     item_id: Optional[str] = None
     quantity: Optional[int] = None
-    unit_price: Optional[str] = None      # "440000" string → Decimal, no float
-    total_price: Optional[str] = None
-    money_paid: Optional[str] = None
-    money_received: Optional[str] = None
-    net_amount: Optional[str] = None
+    unit_price: Optional[Decimal] = None      # "440000" string → Decimal, no float
+    total_price: Optional[Decimal] = None
+    money_paid: Optional[Decimal] = None
+    money_received: Optional[Decimal] = None
+    net_amount: Optional[Decimal] = None
     order_id: Optional[int] = None
 
     @field_validator('unit_price', 'total_price', 'money_paid', 'money_received', 'net_amount', mode='before')
@@ -99,3 +99,35 @@ class StatsOut(BaseModel):
     net: Decimal
     orders: int
     players_observed: int
+
+
+class LinkStartIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    username: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
+    issued_by: Optional[str] = Field(None, max_length=32)
+
+
+class LinkStartOut(BaseModel):
+    username: str
+    code: str
+    expires_in: int
+    expires_at: datetime
+
+
+class LinkClaimIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str = Field(min_length=4, max_length=12)
+
+
+class FriendIn(BaseModel):
+    """A username to add to the signed-in player's friends list.
+
+    Minecraft usernames are 3-16 characters of letters, digits and underscore;
+    the pattern accepts the observed data too, which is why the upper bound is
+    the column length rather than 16.
+    """
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    username: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_]+$")

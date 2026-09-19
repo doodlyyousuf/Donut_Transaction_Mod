@@ -28,6 +28,10 @@ app.add_middleware(
     allow_origins=["*"] if _cors == ["*"] else _cors,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Session cookies are HttpOnly and scoped per player; the dashboard calls the
+    # API with credentials so this must be enabled when the two are on different
+    # origins. In the recommended single-domain nginx setup both are same-origin.
+    allow_credentials=True,
 )
 
 app.include_router(router)

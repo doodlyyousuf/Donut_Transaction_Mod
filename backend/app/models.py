@@ -86,6 +86,30 @@ class Transaction(Base):
     )
 
 
+class Balance(Base):
+    """A point-in-time observation of a player's balance.
+
+    Balances are state, not transactions, so they are stored separately and
+    never contribute to the money totals in /api/stats. Snapshots are kept
+    rather than overwritten so a history can be charted and staleness shown.
+    """
+    __tablename__ = "balances"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(32), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    observed_by: Mapped[str] = mapped_column(String(32), index=True)
+    server: Mapped[str] = mapped_column(String(64), default="donutsmp")
+    raw_message: Mapped[str] = mapped_column(Text)
+    minecraft_timestamp: Mapped[str | None] = mapped_column(String(16))
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("ix_balance_user_time", "username", "observed_at"),
+    )
+
+
 class TransactionEvent(Base):
     __tablename__ = "transaction_events"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -97,3 +121,62 @@ class TransactionEvent(Base):
     player: Mapped[str | None] = mapped_column(String(32))
     raw_message: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LinkCode(Base):
+    """A short-lived code shown in-game that can be exchanged for a session.
+
+    Linking is the trust anchor for per-player views: a code is only visible to
+    the player in chat, is single-use, and expires quickly. Nothing about the
+    Minecraft account (tokens, session files) is involved — only the username.
+    """
+    __tablename__ = "link_codes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(12), index=True)
+    username: Mapped[str] = mapped_column(String(32), index=True)
+    issued_to: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_link_code_username", "username", "used_at"),
+    )
+
+
+class Friend(Base):
+    """A player another signed-in player has chosen to follow.
+
+    Friends are a manual list owned by the signed-in player, not an inferred
+    social graph: nothing in the observation-only data stream proves friendship,
+    so the player builds the list themselves. A friend is just a username; the
+    private views render whatever that player's observed rows happen to be.
+    """
+    __tablename__ = "friends"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_username: Mapped[str] = mapped_column(String(32), index=True)
+    friend_username: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_friend_owner_friend", "owner_username", "friend_username", unique=True),
+    )
+
+
+class PlayerSession(Base):
+    """A dashboard session obtained by claiming an in-game link code.
+
+    The raw token never touches the database: only its SHA-256 digest is stored,
+    so a leaked table cannot be replayed as a cookie.
+    """
+    __tablename__ = "player_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_session_user_expiry", "username", "expires_at"),
+    )
