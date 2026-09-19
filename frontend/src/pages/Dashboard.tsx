@@ -1,55 +1,232 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { api } from "../api";
-import { useTransactionsSocket } from "../hooks/useTransactionsSocket";
-
-const card = "bg-slate-800 rounded-xl p-5 border border-slate-700";
+import { useAsync } from "../hooks/useAsync";
+import { useRealtime } from "../realtime/RealtimeProvider";
+import { formatCompactMoney, formatCount, formatRelative } from "../lib/format";
+import { cn } from "../lib/cn";
+import {
+  Button, Card, CardHeader, ErrorState, Icon, StatCard, EmptyState, Skeleton, Spinner,
+} from "../components/m3";
+import { TransactionItem } from "../components/TransactionItem";
+import { SignInPrompt } from "../components/SignInPrompt";
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<any>(null);
-  const { live, connected } = useTransactionsSocket();
+  const realtime = useRealtime();
+  // Refetch aggregates whenever a new transaction arrives.
+  const stats = useAsync(() => api.stats(), [realtime.revision]);
 
-  useEffect(() => { api.stats().then(setStats).catch(() => {}); }, [live.length]);
+  const s = stats.data;
+  const spent = Number(s?.total_money_spent ?? 0);
+  const received = Number(s?.total_money_received ?? 0);
+  const net = Number(s?.net ?? 0);
+  const flowTotal = Math.max(spent + received, 1);
 
-  const money = (v: any) => `$${Number(v ?? 0).toLocaleString()}`;
+  const flow = useMemo(
+    () => [
+      { label: "Paid", value: spent, pct: (spent / flowTotal) * 100, tone: "bg-error" },
+      { label: "Received", value: received, pct: (received / flowTotal) * 100, tone: "bg-secondary" },
+    ],
+    [spent, received, flowTotal]
+  );
+
+  const lastEvent = realtime.lastEventAt ? new Date(realtime.lastEventAt).toISOString() : null;
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-6">
-        <h1 className="text-2xl font-bold">Transaction Tracker</h1>
-        <span className={connected ? "text-emerald-400 text-sm" : "text-red-400 text-sm"}>
-          ● {connected ? "live" : "offline"}
-        </span>
-      </div>
+    <div className="space-y-6">
+      <SignInPrompt />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-        <div className={card}><div className="text-slate-400 text-sm">Total Transactions</div>
-          <div className="text-3xl font-bold">{stats?.total_transactions ?? "–"}</div></div>
-        <div className={card}><div className="text-slate-400 text-sm">Money Spent</div>
-          <div className="text-3xl font-bold text-red-400">{money(stats?.total_money_spent)}</div></div>
-        <div className={card}><div className="text-slate-400 text-sm">Money Received</div>
-          <div className="text-3xl font-bold text-emerald-400">{money(stats?.total_money_received)}</div></div>
-        <div className={card}><div className="text-slate-400 text-sm">Net Profit / Loss</div>
-          <div className="text-3xl font-bold">{money(stats?.net)}</div></div>
-        <div className={card}><div className="text-slate-400 text-sm">Orders</div>
-          <div className="text-3xl font-bold">{stats?.orders ?? "–"}</div></div>
-        <div className={card}><div className="text-slate-400 text-sm">Players Observed</div>
-          <div className="text-3xl font-bold">{stats?.players_observed ?? "–"}</div></div>
-      </div>
+      {stats.error && !s && (
+        <Card variant="outlined">
+          <ErrorState
+            title="Could not reach the backend"
+            description="The API did not respond. Check that the backend service is running and try again."
+            onRetry={stats.refresh}
+          />
+        </Card>
+      )}
 
-      <h2 className="text-lg font-semibold mb-3">Live Feed (WebSocket)</h2>
-      <div className="space-y-1 font-mono text-sm">
-        {live.length === 0 && <div className="text-slate-500">Waiting for transactions…</div>}
-        {live.map((t) => (
-          <div key={t.id} className="bg-slate-800/60 rounded px-3 py-1.5">
-            {t.minecraft_timestamp ?? t.created_at.slice(11, 19)} · {t.transaction_owner} ·{" "}
-            <span className="text-amber-300">{t.transaction_type}</span> ·{" "}
-            {t.quantity ?? "?"}x {t.item_name ?? "(unknown)"} ·{" "}
-            <span className="text-emerald-300">
-              {t.total_price ? `$${Number(t.total_price).toLocaleString()}` : "–"}
-            </span>
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+        <StatCard
+          label="Total Transactions"
+          value={s ? formatCount(s.total_transactions) : "–"}
+          numericValue={s?.total_transactions}
+          format={(n) => formatCount(Math.round(n))}
+          icon="receipt"
+          tone="primary"
+          loading={stats.loading && !s}
+          animationDelay={0}
+        />
+        <StatCard
+          label="Total Paid (all players)"
+          value={s ? formatCompactMoney(s.total_money_spent) : "–"}
+          numericValue={s ? spent : undefined}
+          format={(n) => formatCompactMoney(n)}
+          icon="trend-down"
+          tone="error"
+          loading={stats.loading && !s}
+          animationDelay={40}
+        />
+        <StatCard
+          label="Total Received (all players)"
+          value={s ? formatCompactMoney(s.total_money_received) : "–"}
+          numericValue={s ? received : undefined}
+          format={(n) => formatCompactMoney(n)}
+          icon="trend-up"
+          tone="secondary"
+          loading={stats.loading && !s}
+          animationDelay={80}
+        />
+        <StatCard
+          label="Net (all players)"
+          value={s ? formatCompactMoney(s.net) : "–"}
+          numericValue={s ? net : undefined}
+          format={(n) => formatCompactMoney(n)}
+          icon="coins"
+          tone={net < 0 ? "error" : "tertiary"}
+          hint="Received minus paid, summed over every player"
+          loading={stats.loading && !s}
+          animationDelay={120}
+        />
+        <StatCard
+          label="Orders"
+          value={s ? formatCount(s.orders) : "–"}
+          numericValue={s?.orders}
+          format={(n) => formatCount(Math.round(n))}
+          icon="orders"
+          tone="primary"
+          loading={stats.loading && !s}
+          animationDelay={160}
+        />
+        <StatCard
+          label="Players Observed"
+          value={s ? formatCount(s.players_observed) : "–"}
+          numericValue={s?.players_observed}
+          format={(n) => formatCount(Math.round(n))}
+          icon="players"
+          tone="neutral"
+          loading={stats.loading && !s}
+          animationDelay={200}
+        />
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-5">
+        <Card className="lg:col-span-3" padding="none">
+          <div className="p-4 sm:p-5">
+            <CardHeader
+              title="Live feed"
+              subtitle={
+                realtime.connected
+                  ? lastEvent
+                    ? `Last event ${formatRelative(lastEvent)}`
+                    : "Waiting for transactions"
+                  : "Reconnecting to the event stream"
+              }
+              icon={<Icon name="bolt" size={20} />}
+              action={
+                <span
+                  className={cn(
+                    "flex h-2.5 w-2.5 rounded-full",
+                    realtime.connected ? "animate-live-pulse bg-primary" : "bg-error"
+                  )}
+                  aria-label={realtime.connected ? "Connected" : "Disconnected"}
+                />
+              }
+            />
+            <div className="m3-scroll max-h-[26rem] space-y-2 overflow-y-auto pr-1">
+              {realtime.live.length === 0 ? (
+                <EmptyState
+                  icon="wifi"
+                  title="No live events yet"
+                  description="Events appear here the moment a tracker reports them."
+                  className="py-10"
+                />
+              ) : (
+                realtime.live.map((tx, index) => (
+                  <TransactionItem
+                    key={tx.id}
+                    tx={tx}
+                    animate={index === 0}
+                  />
+                ))
+              )}
+            </div>
           </div>
-        ))}
-      </div>
+        </Card>
+
+        <div className="space-y-4 lg:col-span-2">
+          <Card>
+            <CardHeader
+              title="Money flow"
+              subtitle="Lifetime totals summed over every observed player"
+              icon={<Icon name="coins" size={20} />}
+            />
+            {stats.loading && !s ? (
+              <div className="space-y-4 py-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-full rounded-full" />
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-3 w-full rounded-full" />
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {flow.map((row) => (
+                  <div key={row.label}>
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <span className="text-sm text-on-surface-variant">{row.label}</span>
+                      <span className="font-mono text-sm tabular-nums text-on-surface">
+                        {formatCompactMoney(row.value)}
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-container-high">
+                      <div
+                        className={cn("h-full origin-left animate-grow-x rounded-full", row.tone)}
+                        style={{ width: `${row.pct}%`, animationDelay: "150ms" }}
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <div className="m3-divider my-1" />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-on-surface">Net (all players)</span>
+                  <span
+                    className={cn(
+                      "font-mono text-lg font-semibold tabular-nums",
+                      net < 0 ? "text-error" : "text-secondary"
+                    )}
+                  >
+                    {formatCompactMoney(net)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card variant="filled">
+            <CardHeader
+              title="Tracker status"
+              subtitle="Passive observation only, no gameplay actions"
+              icon={<Icon name="wifi" size={20} />}
+            />
+            <div className="flex items-center justify-between rounded-lg bg-surface-container p-3">
+              <div className="flex items-center gap-2 text-sm">
+                {realtime.connected ? (
+                  <Icon name="check" size={18} className="text-secondary" />
+                ) : (
+                  <Spinner size={18} className="text-error" />
+                )}
+                <span className="text-on-surface">
+                  {realtime.connected ? "Stream connected" : "Stream disconnected"}
+                </span>
+              </div>
+              <Button variant="text" size="sm" icon="refresh" onClick={stats.refresh}>
+                Refresh
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </section>
     </div>
   );
 }

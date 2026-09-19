@@ -1,3 +1,470 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Fallback tokens. These are replaced at runtime by the generated scheme, but
+ * they must exist so the very first paint (before React mounts) is themed.
+ * Values are "R G B" channels to match the Tailwind color config.
+ */
+:root {
+  --md-primary: 43 96 153;
+  --md-on-primary: 255 255 255;
+  --md-primary-container: 213 227 255;
+  --md-on-primary-container: 0 29 54;
+  --md-secondary: 80 95 120;
+  --md-on-secondary: 255 255 255;
+  --md-secondary-container: 213 227 255;
+  --md-on-secondary-container: 10 28 49;
+  --md-tertiary: 14 104 115;
+  --md-on-tertiary: 255 255 255;
+  --md-tertiary-container: 164 239 250;
+  --md-on-tertiary-container: 0 31 36;
+  --md-error: 191 0 49;
+  --md-on-error: 255 255 255;
+  --md-error-container: 255 218 216;
+  --md-on-error-container: 65 0 4;
+  --md-surface: 247 249 255;
+  --md-on-surface: 25 28 33;
+  --md-surface-variant: 220 227 241;
+  --md-on-surface-variant: 65 71 83;
+  --md-surface-dim: 215 218 225;
+  --md-surface-bright: 247 249 255;
+  --md-surface-container-lowest: 255 255 255;
+  --md-surface-container-low: 240 244 251;
+  --md-surface-container: 234 238 245;
+  --md-surface-container-high: 229 232 240;
+  --md-surface-container-highest: 223 227 234;
+  --md-outline: 113 119 132;
+  --md-outline-variant: 192 199 213;
+  --md-inverse-surface: 46 48 54;
+  --md-inverse-on-surface: 237 241 248;
+  --md-inverse-primary: 166 200 255;
+  --md-scrim: 0 0 0;
+  --md-shadow: 0 0 0;
+
+  --dur-page: 350ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-primary: 166 200 255;
+    --md-on-primary: 0 50 89;
+    --md-primary-container: 0 73 125;
+    --md-on-primary-container: 213 227 255;
+    --md-secondary: 184 199 228;
+    --md-on-secondary: 33 49 72;
+    --md-secondary-container: 56 71 95;
+    --md-on-secondary-container: 213 227 255;
+    --md-tertiary: 136 210 222;
+    --md-on-tertiary: 0 54 61;
+    --md-tertiary-container: 0 79 88;
+    --md-on-tertiary-container: 164 239 250;
+    --md-error: 255 179 176;
+    --md-on-error: 104 0 22;
+    --md-error-container: 146 0 35;
+    --md-on-error-container: 255 218 216;
+    --md-surface: 17 19 25;
+    --md-on-surface: 223 227 234;
+    --md-surface-variant: 65 71 83;
+    --md-on-surface-variant: 192 199 213;
+    --md-surface-dim: 17 19 25;
+    --md-surface-bright: 54 57 63;
+    --md-surface-container-lowest: 11 14 21;
+    --md-surface-container-low: 25 28 33;
+    --md-surface-container: 29 32 37;
+    --md-surface-container-high: 39 42 48;
+    --md-surface-container-highest: 50 53 59;
+    --md-outline: 138 145 158;
+    --md-outline-variant: 65 71 83;
+    --md-inverse-surface: 223 227 234;
+    --md-inverse-on-surface: 46 48 54;
+    --md-inverse-primary: 43 96 153;
+    --md-scrim: 0 0 0;
+    --md-shadow: 0 0 0;
+  }
+}
+
+@layer base {
+  * {
+    border-color: rgb(var(--md-outline-variant));
+  }
+
+  html {
+    background-color: rgb(var(--md-surface));
+    /* Smooth the light/dark swap instead of a hard cut */
+    transition: background-color 300ms cubic-bezier(0.2, 0, 0, 1);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background-color: rgb(var(--md-surface));
+    color: rgb(var(--md-on-surface));
+    font-family: Roboto, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: rgb(var(--md-primary) / 0.32);
+  }
+
+  :focus-visible {
+    outline: 3px solid rgb(var(--md-primary) / 0.7);
+    outline-offset: 2px;
+  }
+
+  input, select, textarea, button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Material Symbols render as plain glyph text until the font loads. Hiding
+     the fallback ligature text keeps the UI clean on slow connections. */
+  .material-symbols-rounded {
+    font-family: "Material Symbols Rounded", "Material Icons", sans-serif;
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-feature-settings: "liga";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    user-select: none;
+  }
+}
+
+@layer components {
+  /* Material state layer: the hover/focus overlay used by every interactive
+     surface. Opacity is driven by a CSS var so variants can tune it. */
+  .state-layer {
+    position: relative;
+    isolation: isolate;
+  }
+  .state-layer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+    z-index: 0;
+  }
+  .state-layer:hover::after { opacity: var(--hover-opacity, 0.08); }
+  .state-layer:focus-visible::after { opacity: var(--focus-opacity, 0.10); }
+  .state-layer:active::after { opacity: var(--press-opacity, 0.12); }
+  .state-layer > * { position: relative; z-index: 1; }
+
+  .m3-elevate {
+    transition: box-shadow 300ms cubic-bezier(0.2, 0, 0, 1),
+                transform 300ms cubic-bezier(0.2, 0, 0, 1),
+                background-color 300ms cubic-bezier(0.2, 0, 0, 1),
+                border-color 300ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* Frosted glass surface used by the navbar, dialogs and sticky headers. */
+  .glass {
+    background-color: rgb(var(--md-surface) / 0.72);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  }
+
+  /* Centered content column shared by the navbar and the page area. */
+  .app-container {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 640px) { .app-container { padding-inline: 1.5rem; } }
+  @media (min-width: 1024px) { .app-container { padding-inline: 2rem; } }
+
+  /* Thin, self-effacing scrollbars that match the surface palette */
+  .m3-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--md-outline-variant)) transparent;
+  }
+  .m3-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .m3-scroll::-webkit-scrollbar-track { background: transparent; }
+  .m3-scroll::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--md-outline-variant));
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .m3-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--md-outline));
+  }
+
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  /* Indeterminate progress bar (top loading rail and inline loaders) */
+  .m3-progress-track {
+    position: relative;
+    overflow: hidden;
+  }
+  .m3-progress-track::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgb(var(--md-primary));
+    border-radius: 9999px;
+    transform-origin: left center;
+    animation: indeterminate 1.8s cubic-bezier(0.2, 0, 0, 1) infinite;
+  }
+
+  .m3-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--md-surface-container-high) / 0) 0%,
+      rgb(var(--md-on-surface) / 0.06) 50%,
+      rgb(var(--md-surface-container-high) / 0) 100%
+    );
+    background-size: 480px 100%;
+    background-repeat: no-repeat;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  /* Ripple is injected as a span and removed on animation end */
+  .m3-ripple {
+    position: absolute;
+    border-radius: 9999px;
+    background-color: currentColor;
+    opacity: 0.22;
+    transform: scale(0);
+    animation: ripple 560ms cubic-bezier(0.2, 0, 0, 1) forwards;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .m3-divider { height: 1px; background-color: rgb(var(--md-outline-variant)); }
+
+  /* Card with a hairline top highlight that catches the theme's primary. */
+  .surface-card {
+    background-color: rgb(var(--md-surface-container-low));
+    border: 1px solid rgb(var(--md-outline-variant) / 0.6);
+  }
+}
+
+@keyframes ripple {
+  to { transform: scale(2.6); opacity: 0; }
+}
+
+/*
+ * Respect the OS reduced-motion setting: keep the layout and state changes,
+ * drop the decorative movement.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .m3-shimmer { animation: none !important; }
+}
+
+/* ------------------------------------------------------------------ backdrop
+ * Decorative animated background. Colors are read from the active Material
+ * scheme so the motion always belongs to the selected theme. Variants only
+ * change composition/opacity, never layout.
+ */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: rgb(var(--md-surface));
+}
+
+.app-bg__blob,
+.app-bg__hue,
+.app-bg__grid,
+.app-bg__veil,
+.app-bg__noise,
+.app-bg__beam {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.app-bg__blob {
+  width: 58vmax;
+  height: 58vmax;
+  border-radius: 50%;
+  filter: blur(72px);
+  opacity: 0.5;
+  will-change: transform;
+}
+.app-bg__blob--1 {
+  top: -14%;
+  left: -8%;
+  background: radial-gradient(circle at 35% 35%, rgb(var(--md-primary) / 0.9), transparent 70%);
+  animation: bg-float-a 26s ease-in-out infinite;
+}
+.app-bg__blob--2 {
+  top: 30%;
+  right: -14%;
+  background: radial-gradient(circle at 55% 45%, rgb(var(--md-secondary) / 0.85), transparent 70%);
+  animation: bg-float-b 32s ease-in-out infinite;
+}
+.app-bg__blob--3 {
+  bottom: -20%;
+  left: 22%;
+  background: radial-gradient(circle at 50% 55%, rgb(var(--md-tertiary) / 0.85), transparent 70%);
+  animation: bg-float-c 38s ease-in-out infinite;
+}
+
+/* Sweeping highlight that gives the backdrop a slow, premium motion. */
+.app-bg__beam {
+  top: -30%;
+  left: -20%;
+  width: 60%;
+  height: 160%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgb(var(--md-primary) / 0.14) 45%,
+    rgb(var(--md-tertiary) / 0.12) 55%,
+    transparent 100%
+  );
+  filter: blur(60px);
+  transform: rotate(12deg);
+  animation: bg-beam 22s ease-in-out infinite;
+}
+
+/* Full-spectrum layer, only revealed by the Spectrum background. Kept to a
+   cool-to-warm arc with no pink/magenta stops. */
+.app-bg__hue {
+  inset: -40%;
+  opacity: 0;
+  background: conic-gradient(from 0deg,
+    #00d4ff, #33ff77, #ffe600, #ff8a00, #7a5cff, #00b3ff, #00d4ff);
+  filter: blur(95px) saturate(1.15);
+  animation: bg-spin 64s linear infinite;
+}
+
+/* Technical grid, used by the monochrome themes. */
+.app-bg__grid {
+  inset: 0;
+  opacity: 0;
+  background-image:
+    linear-gradient(rgb(var(--md-outline-variant) / 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--md-outline-variant) / 0.5) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 35%, #000 15%, transparent 78%);
+  mask-image: radial-gradient(ellipse at 50% 35%, #000 15%, transparent 78%);
+  animation: bg-grid-pan 44s linear infinite;
+}
+
+/* Fine grain overlay softens banding in the large blurred gradients. */
+.app-bg__noise {
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Soft vignette keeps foreground surfaces readable over the motion. */
+.app-bg__veil {
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(var(--md-surface) / 0.05) 0%,
+    rgb(var(--md-surface) / 0.28) 55%,
+    rgb(var(--md-surface) / 0.5) 100%
+  );
+}
+
+/* --- variant tuning ------------------------------------------------------- */
+
+.app-bg[data-bg="mesh"] .app-bg__blob {
+  width: 66vmax;
+  height: 66vmax;
+  filter: blur(58px);
+  opacity: 0.4;
+}
+.app-bg[data-bg="mesh"] .app-bg__grid { opacity: 0.16; }
+
+.app-bg[data-bg="ocean"] .app-bg__blob {
+  width: 70vmax;
+  height: 44vmax;
+  border-radius: 46%;
+  filter: blur(64px);
+}
+.app-bg[data-bg="ocean"] .app-bg__veil {
+  background: linear-gradient(
+    180deg,
+    rgb(var(--md-surface) / 0.02) 0%,
+    rgb(var(--md-surface) / 0.22) 50%,
+    rgb(var(--md-surface) / 0.48) 100%
+  );
+}
+
+.app-bg[data-bg="plasma"] .app-bg__blob {
+  filter: blur(84px);
+  opacity: 0.55;
+}
+.app-bg[data-bg="plasma"] .app-bg__blob--1 { animation-duration: 20s; }
+.app-bg[data-bg="plasma"] .app-bg__blob--2 { animation-duration: 24s; }
+.app-bg[data-bg="plasma"] .app-bg__blob--3 { animation-duration: 28s; }
+
+.app-bg[data-bg="grid"] .app-bg__blob {
+  opacity: 0.18;
+  filter: blur(90px);
+}
+.app-bg[data-bg="grid"] .app-bg__grid { opacity: 0.5; }
+
+.app-bg[data-bg="rainbow"] .app-bg__hue { opacity: 0.3; }
+.app-bg[data-bg="rainbow"] .app-bg__blob { opacity: 0.24; }
+.app-bg[data-bg="rainbow"] .app-bg__veil {
+  background: linear-gradient(
+    180deg,
+    rgb(var(--md-surface) / 0.1) 0%,
+    rgb(var(--md-surface) / 0.34) 55%,
+    rgb(var(--md-surface) / 0.55) 100%
+  );
+}
+
+.app-bg[data-mode="light"] .app-bg__blob { opacity: 0.36; }
+.app-bg[data-mode="light"][data-bg="plasma"] .app-bg__blob { opacity: 0.42; }
+.app-bg[data-mode="light"][data-bg="rainbow"] .app-bg__hue { opacity: 0.2; }
+.app-bg[data-mode="light"] .app-bg__beam { opacity: 0.7; }
+
+@keyframes bg-float-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(8vw, 6vh, 0) scale(1.12); }
+}
+@keyframes bg-float-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50%      { transform: translate3d(-9vw, -5vh, 0) scale(0.95); }
+}
+@keyframes bg-float-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.98); }
+  50%      { transform: translate3d(6vw, -7vh, 0) scale(1.14); }
+}
+@keyframes bg-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes bg-grid-pan {
+  to { background-position: 46px 46px, 46px 46px; }
+}
+@keyframes bg-beam {
+  0%, 100% { transform: translate3d(-10%, 0, 0) rotate(12deg); opacity: 0.55; }
+  50%      { transform: translate3d(120%, 0, 0) rotate(12deg); opacity: 0.9; }
+}
