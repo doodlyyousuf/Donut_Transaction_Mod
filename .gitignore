@@ -1,6 +1,9 @@
 # Minecraft Mod
 minecraft-mod/build/
 minecraft-mod/.gradle/
+minecraft-mod/mc26/build/
+minecraft-mod/mc26/.gradle/
+minecraft-mod/dist/
 minecraft-mod/gradle-app.setting
 minecraft-mod/.idea/
 minecraft-mod/*.jar
@@ -8,12 +11,12 @@ minecraft-mod/logs/
 
 # Backend
 backend/.venv/
-backend/__pycache__/
-backend/*.pyc
 backend/.env
-backend/test.db
-backend/*.db
 backend.egg-info/
+__pycache__/
+*.pyc
+*.db
+.pytest_cache/
 
 # Frontend
 frontend/node_modules/
@@ -26,3 +29,6 @@ frontend/.cache/
 *.log
 *.tmp
 .env
+
+# Local VPS deploy config (machine-specific)
+deploy/vps.env
