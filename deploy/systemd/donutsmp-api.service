@@ -1,0 +1,20 @@
+[Unit]
+Description=DonutSMP Transaction Tracker API
+After=network-online.target postgresql.service
+Wants=network-online.target
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=donut
+Group=donut
+WorkingDirectory=/opt/donutsmp-tracker/backend
+EnvironmentFile=/opt/donutsmp-tracker/backend/.env
+ExecStart=/opt/donutsmp-tracker/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18700 --proxy-headers
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
