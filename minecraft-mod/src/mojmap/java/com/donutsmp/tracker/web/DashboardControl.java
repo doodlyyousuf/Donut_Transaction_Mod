@@ -3,7 +3,8 @@ package com.donutsmp.tracker.web;
 import com.donutsmp.tracker.DonutTrackerClient;
 import com.donutsmp.tracker.config.TrackerConfig;
 import com.donutsmp.tracker.sync.SyncService;
-import net.minecraft.text.Text;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
 
 import java.net.URI;
@@ -11,6 +12,7 @@ import java.net.http.*;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
+// 26.1.x build: official (Mojang) class names.
 public final class DashboardControl {
     public static CompletableFuture<Boolean> statusAsync() {
         TrackerConfig cfg = TrackerConfig.load();
@@ -25,27 +27,24 @@ public final class DashboardControl {
         });
     }
 
-    public static int openDashboard(net.minecraft.fabric.api.client.command.v2.FabricClientCommandSource src) {
+    public static int openDashboard(FabricClientCommandSource src) {
         TrackerConfig cfg = TrackerConfig.load();
-        String url = "http://localhost:" + cfg.webPort;
-        post("/api/dashboard/start");
-        Util.getOperatingSystem().open(URI.create(url));
-        src.sendFeedback(Text.literal(
-                "§aTransaction Tracker Web Dashboard started: §f" + url));
+        String url = cfg.backendUrl;
+        Util.getPlatform().openUri(URI.create(url));
+        src.sendFeedback(Component.literal(
+                "§aTransaction Tracker dashboard: §f" + url));
         return 1;
     }
 
-    public static int stopDashboard(net.minecraft.fabric.api.client.command.v2.FabricClientCommandSource src) {
-        TrackerConfig cfg = TrackerConfig.load();
+    public static int stopDashboard(FabricClientCommandSource src) {
         post("/api/dashboard/stop");
-        src.sendFeedback(Text.literal("§cTransaction Tracker Web Dashboard stopped."));
+        src.sendFeedback(Component.literal("§cTransaction Tracker Web Dashboard stopped."));
         return 1;
     }
 
-    public static int restartDashboard(net.minecraft.fabric.api.client.command.v2.FabricClientCommandSource src) {
-        TrackerConfig cfg = TrackerConfig.load();
+    public static int restartDashboard(FabricClientCommandSource src) {
         post("/api/dashboard/restart");
-        src.sendFeedback(Text.literal("§eTransaction Tracker Web Dashboard restarting..."));
+        src.sendFeedback(Component.literal("§eTransaction Tracker Web Dashboard restarting..."));
         return 1;
     }
 

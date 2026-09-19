@@ -3,7 +3,10 @@ plugins {
     id 'java'
 }
 
-version = project.mod_version
+// 1.21.x build. The 26.1.x line has its own build in ./mc26 (modern Loom, no
+// mappings, official class names) — see README "Building for both lines".
+
+version = "${project.mod_version}+mc${project.minecraft_version}"
 group = project.maven_group
 base { archivesName = project.archives_base_name }
 
@@ -17,11 +20,24 @@ dependencies {
     // Gson ships with Minecraft
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    // Gradle 9+ needs the launcher on the test runtime classpath
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
+
+// The 1.21.x client/UI glue lives in src/yarn/java (yarn class names).
+sourceSets.main.java.srcDir 'src/yarn/java'
 
 processResources {
     inputs.property "version", project.version
-    filesMatching("fabric.mod.json") { expand "version": project.version }
+    inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "loader_version", project.loader_version
+    inputs.property "java_depends", project.java_depends
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version,
+               "minecraft_version": project.minecraft_version,
+               "loader_version": project.loader_version,
+               "java_depends": project.java_depends
+    }
 }
 
 java {

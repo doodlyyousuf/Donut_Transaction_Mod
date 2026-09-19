@@ -16,13 +16,12 @@ public final class SyncService {
     private static ScheduledExecutorService exec;
     private static HttpClient http;
     private static TrackerConfig cfg;
-    private static TrackerState state;
     private static final Gson GSON = new Gson();
     private static volatile boolean syncing;
     private static final CompletableFuture<Void> IMMEDIATE = new CompletableFuture<>();
 
     public static void start(TrackerConfig config, TrackerState trackerState) {
-        cfg = config; state = trackerState;
+        cfg = config;
         http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
         exec = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "DonutTracker-Sync");
@@ -35,6 +34,50 @@ public final class SyncService {
     }
 
     public static void requestImmediateSync() { syncOnce(); }
+
+    /**
+     * Ask the backend for a one-time link code so the player can sign the
+     * dashboard in to their own private view. Only the username is sent; no
+     * Minecraft credentials of any kind leave the game.
+     */
+    public static CompletableFuture<String> requestLinkCode(String username) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                ensureApiKey();
+                TrackerConfig live = cfg != null ? cfg : TrackerConfig.load();
+                if (!live.hasApiKey()) {
+                    return "§c[Tracker] No API key yet — is the backend running?";
+                }
+                String body = GSON.toJson(Map.of("username", username, "issued_by", username));
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(5)).build();
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(live.backendUrl + "/api/auth/link/start"))
+                        .timeout(Duration.ofSeconds(8))
+                        .header("Content-Type", "application/json")
+                        .header("X-API-Key", live.apiKey)
+                        .POST(HttpRequest.BodyPublishers.ofString(body))
+                        .build();
+                HttpResponse<String> res = client.send(req, HttpResponse.BodyHandlers.ofString());
+                if (res.statusCode() != 200) {
+                    return "§c[Tracker] Could not create a link code (HTTP "
+                            + res.statusCode() + ").";
+                }
+                JsonObject json = GSON.fromJson(res.body(), JsonObject.class);
+                if (json == null || !json.has("code")) {
+                    return "§c[Tracker] Backend returned no link code.";
+                }
+                String code = json.get("code").getAsString();
+                int seconds = json.has("expires_in") ? json.get("expires_in").getAsInt() : 300;
+                int minutes = Math.max(1, seconds / 60);
+                return "§a[Tracker] Your link code is §f§l" + code
+                        + "§r§7 — enter it in the dashboard within §f" + minutes
+                        + "§7 minutes.";
+            } catch (Exception e) {
+                return "§c[Tracker] Backend unreachable — link code not created.";
+            }
+        });
+    }
 
     /** Pull the server-generated key once and save it to the mod config. */
     public static synchronized void ensureApiKey() {
@@ -72,9 +115,7 @@ public final class SyncService {
         try {
             ensureApiKey();
             if (!cfg.hasApiKey()) return;
-            List<String> batch = state.queue == null ? List.of() : List.of();
-            // (queue lives in TrackerState; expose via accessor below)
-            batch = drainQueue();
+            List<String> batch = drainQueue();
             if (batch.isEmpty()) return;
 
             String body = GSON.toJson(Map.of("transactions",

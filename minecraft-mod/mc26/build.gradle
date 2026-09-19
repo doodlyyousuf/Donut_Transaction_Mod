@@ -1,0 +1,65 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.18.1'
+    id 'java'
+}
+
+// 26.1.x build. Modern Loom + no mappings, because 26.1+ ships the game
+// unobfuscated (spec §9). Shares the sources with the 1.21.x build in ../src;
+// only the three Minecraft-touching client classes differ (../src/mojmap/java
+// uses official Mojang names).
+
+version = "${project.mod_version}+mc${project.minecraft_version}"
+group = project.maven_group
+base { archivesName = project.archives_base_name }
+
+repositories { mavenCentral() }
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    // Unobfuscated game => Fabric API needs no remapping, so plain
+    // 'implementation' is used instead of 'modImplementation'.
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir '../src/main/java'
+            srcDir '../src/mojmap/java'
+        }
+        resources { srcDir '../src/main/resources' }
+    }
+    test {
+        java { srcDir '../src/test/java' }
+    }
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "loader_version", project.loader_version
+    inputs.property "java_depends", project.java_depends
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version,
+               "minecraft_version": project.minecraft_version,
+               "loader_version": project.loader_version,
+               "java_depends": project.java_depends
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(project.java_release)
+    targetCompatibility = JavaVersion.toVersion(project.java_release)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = project.java_release as int
+}
+
+test {
+    useJUnitPlatform()
+}

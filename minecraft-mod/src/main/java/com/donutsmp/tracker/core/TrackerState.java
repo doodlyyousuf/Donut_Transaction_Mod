@@ -25,6 +25,9 @@ public final class TrackerState {
         return t;
     });
     private final Deque<TransactionRecord> cache = new ConcurrentLinkedDeque<>();
+    /** Set when a non-balance transaction is seen, so the client can run /bal. */
+    private final java.util.concurrent.atomic.AtomicBoolean balanceCheckPending =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private volatile boolean active;
     private volatile String serverAddress;
@@ -39,9 +42,13 @@ public final class TrackerState {
         this.serverAddress = address;
         this.localPlayer = username;
         this.active = donut && config.trackingEnabled;
+        this.balanceCheckPending.set(false);
     }
 
-    public void onDisconnect() { this.active = false; }
+    public void onDisconnect() {
+        this.active = false;
+        this.balanceCheckPending.set(false);
+    }
 
     public void onChat(String raw) {
         if (!active) return;                       // §2: gate unrelated servers
@@ -53,18 +60,25 @@ public final class TrackerState {
                 String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
                 ParserContext ctx = new ParserContext(
                         localPlayer, msg, serverAddress, "donutsmp", ts);
-                Optional<TransactionRecord> r = ParserRegistry.parse(norm, ctx);
-                if (r.isPresent()) {
-                    TransactionRecord t = r.get();
-                    t.server = "donutsmp";
-                    t.server_address = serverAddress;
-                    t.created_at = java.time.Instant.now().toString();
-                    t.fingerprint = Fingerprint.of(t);
-                    queue.enqueue(gson.toJson(t)); // §31/§32: durable first
-                    if (cache.size() >= 500) { synchronized (cache) { cache.removeLast(); } }
-                    cache.addFirst(t);
-                    DonutTrackerClient.LOGGER.info("[TransactionTracker] Detected {} transaction",
-                            t.transaction_type);
+                List<TransactionRecord> records = ParserRegistry.parse(norm, ctx);
+                if (!records.isEmpty()) {
+                    boolean sawTransaction = false;
+                    for (TransactionRecord t : records) {
+                        t.server = "donutsmp";
+                        t.server_address = serverAddress;
+                        t.created_at = java.time.Instant.now().toString();
+                        t.fingerprint = Fingerprint.of(t);
+                        queue.enqueue(gson.toJson(t)); // §31/§32: durable first
+                        if (cache.size() >= 500) { synchronized (cache) { cache.removeLast(); } }
+                        cache.addFirst(t);
+                        if (!"BALANCE".equals(t.transaction_type)) sawTransaction = true;
+                        DonutTrackerClient.LOGGER.info("[TransactionTracker] Detected {} transaction",
+                                t.transaction_type);
+                    }
+                    // Refresh the balance after real activity. A balance reply is
+                    // deliberately excluded: it is the result of this very check, and
+                    // reacting to it would loop /bal forever.
+                    if (sawTransaction) balanceCheckPending.set(true);
                 } else if (config.debugLogging) {   // §38: debug only, never a fake record
                     Files.createDirectories(Path.of("logs"));
                     Files.writeString(Path.of("logs", "parser-debug.log"),
@@ -80,6 +94,9 @@ public final class TrackerState {
     }
 
     public boolean isActive() { return active; }
+    /** True when a transaction happened since the last balance check was sent. */
+    public boolean isBalanceCheckPending() { return balanceCheckPending.get(); }
+    public void clearBalanceCheckPending() { balanceCheckPending.set(false); }
     public String serverAddress() { return serverAddress; }
     public int queueSize() { return queue.size(); }
     public int localCount() { return cache.size(); }

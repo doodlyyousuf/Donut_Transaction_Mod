@@ -7,6 +7,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 public class TrackerScreen extends Screen {
@@ -41,14 +42,14 @@ public class TrackerScreen extends Screen {
 
         // §20 dashboard aggregates (from local cache)
         List<TransactionRecord> all = TrackerState.STATE.recent(500);
-        long spent = all.stream().filter(t -> "BUY".equals(t.transaction_type))
-                .mapToLong(t -> t.money_paid == null ? 0 : Long.parseLong(t.money_paid)).sum();
-        long received = all.stream().filter(t -> "SELL".equals(t.transaction_type))
-                .mapToLong(t -> t.money_received == null ? 0 : Long.parseLong(t.money_received)).sum();
+        BigDecimal spent = all.stream().filter(t -> "BUY".equals(t.transaction_type))
+                .map(t -> money(t.money_paid)).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal received = all.stream().filter(t -> "SELL".equals(t.transaction_type))
+                .map(t -> money(t.money_received)).reduce(BigDecimal.ZERO, BigDecimal::add);
         ctx.drawTextWithShadow(this.textRenderer,
-                String.format("Records: %d   Spent: $%s   Received: $%s   Net: $%d",
-                        all.size(), fmt(spent), fmt(received), received - spent),
-                16, 28, 0xAARRGGBB & 0xFFDDDDDD);
+                String.format("Records: %d   Spent: $%s   Received: $%s   Net: $%s",
+                        all.size(), fmt(spent), fmt(received), fmt(received.subtract(spent))),
+                16, 28, 0xFFDDDDDD);
 
         // §21 filtered, paginated rows
         List<TransactionRecord> rows = new ArrayList<>(all);
@@ -67,13 +68,18 @@ public class TrackerScreen extends Screen {
                     t.transaction_type,
                     trunc((t.quantity == null ? "?" : t.quantity) + "x " +
                             (t.item_name == null ? "(unknown)" : t.item_name), 24),
-                    t.total_price == null ? "-" : ("$" + fmt(Long.parseLong(t.total_price))));
+                    t.total_price == null ? "-" : ("$" + fmt(money(t.total_price))));
             ctx.drawTextWithShadow(this.textRenderer, line, 16, 56 + i * 11, 0xFFE0E0E0);
         }
     }
 
-    private static String fmt(long v) {
-        return String.format("%,d", v);
+    private static BigDecimal money(String raw) {
+        if (raw == null) return BigDecimal.ZERO;
+        try { return new BigDecimal(raw); } catch (NumberFormatException e) { return BigDecimal.ZERO; }
+    }
+
+    private static String fmt(BigDecimal v) {
+        return String.format("%,.2f", v);
     }
 
     private static String trunc(String s, int n) {

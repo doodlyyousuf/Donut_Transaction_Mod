@@ -1,6 +1,8 @@
 package com.donutsmp.tracker;
 
 import com.donutsmp.tracker.config.TrackerConfig;
+import com.donutsmp.tracker.core.BalanceCheckScheduler;
+import com.donutsmp.tracker.core.BalanceWatcher;
 import com.donutsmp.tracker.core.TrackerState;
 import com.donutsmp.tracker.queue.OfflineQueue;
 import com.donutsmp.tracker.sync.SyncService;
@@ -12,6 +14,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
@@ -21,10 +24,17 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.donutsmp.tracker.model.ParserContext;
+import com.donutsmp.tracker.parser.MessageNormalizer;
 
 public class DonutTrackerClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("TransactionTracker");
     public static TrackerState STATE;
+
+    private static BalanceWatcher balanceWatcher;
+    private static BalanceCheckScheduler balanceScheduler;
+    private static String balanceCommand = "bal";
+    /** Set while the mod itself is sending /bal, so it is not read as manual. */
+    private static boolean autoSendingBalance;
 
     @Override
     public void onInitializeClient() {
@@ -33,6 +43,12 @@ public class DonutTrackerClient implements ClientModInitializer {
         STATE = new TrackerState(config, queue);
         TrackerState.STATE = STATE;
         SyncService.wireQueue(queue);
+        balanceWatcher = new BalanceWatcher();
+        balanceScheduler = new BalanceCheckScheduler(
+                config.autoBalanceCheck,
+                config.balanceCheckCooldownSeconds * 1000L,
+                config.balanceCheckPeriodicSeconds);
+        balanceCommand = config.balanceCommandName();
 
         // §2: enable tracking only on *.donutsmp.net
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -41,14 +57,36 @@ public class DonutTrackerClient implements ClientModInitializer {
             boolean donut = address != null
                     && address.toLowerCase().matches("(^|\\.)([a-z0-9-]+\\.)?donutsmp\\.net(:\\d+)?");
             STATE.onServerJoin(address, donut, client.getSession().getUsername());
+            balanceScheduler.reset();
             LOGGER.info("[TransactionTracker] Server {} → tracking {}",
                     address == null ? "unknown" : address, donut ? "ENABLED" : "disabled");
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> STATE.onDisconnect());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            STATE.onDisconnect();
+            balanceScheduler.reset();
+        });
+
+        // Hide the mod's own balance replies from chat, but keep recording them.
+        ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+            if (overlay) return true;
+            String raw = message.getString();
+            if (balanceWatcher.shouldSuppress(MessageNormalizer.normalize(raw))) {
+                STATE.onChat(raw);       // still captured as a balance snapshot
+                return false;            // never rendered, so nothing piles up in chat
+            }
+            return true;
+        });
 
         // §3: passive chat monitoring (GAME = every server-sent message)
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!overlay) STATE.onChat(message.getString());
+        });
+
+        // The player typing /bal or /balance keeps its reply visible.
+        ClientSendMessageEvents.COMMAND.register(command -> {
+            if (!autoSendingBalance && isBalanceCommand(command)) {
+                balanceWatcher.expectManual();
+            }
         });
 
         // §20: keybind (default Right Shift)
@@ -62,6 +100,11 @@ public class DonutTrackerClient implements ClientModInitializer {
                         net.minecraft.util.Identifier.of("donutsmp-tracker", "main"))));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openKey.wasPressed()) client.setScreen(new TrackerScreen());
+            if (STATE.isActive()
+                    && balanceScheduler.tick(System.currentTimeMillis(), STATE.isBalanceCheckPending())) {
+                STATE.clearBalanceCheckPending();
+                sendAutoBalance(client);
+            }
         });
 
         registerCommands();
@@ -69,6 +112,26 @@ public class DonutTrackerClient implements ClientModInitializer {
         // §31: background sync worker
         SyncService.start(config, STATE);
         LOGGER.info("[TransactionTracker] initialized (backend={})", config.backendUrl);
+    }
+
+    private static boolean isBalanceCommand(String command) {
+        if (command == null) return false;
+        String c = command.trim().toLowerCase(java.util.Locale.ROOT);
+        if (c.startsWith("/")) c = c.substring(1).trim();
+        return c.equals("bal") || c.equals("balance");
+    }
+
+    private static void sendAutoBalance(MinecraftClient client) {
+        if (client == null || client.player == null) return;
+        autoSendingBalance = true;
+        try {
+            client.player.networkHandler.sendChatCommand(balanceCommand);
+            balanceWatcher.expectAuto();
+        } catch (Exception e) {
+            LOGGER.warn("[TransactionTracker] balance check failed", e);
+        } finally {
+            autoSendingBalance = false;
+        }
     }
 
     private void registerCommands() {
@@ -89,18 +152,34 @@ public class DonutTrackerClient implements ClientModInitializer {
                     return 1;
                 }))
                 .then(ClientCommandManager.literal("status").executes(ctx -> {
+                    var s = ctx.getSource();
                     DashboardControl.statusAsync().thenAccept(ok ->
-                        ctx.getSource().sendFeedback(Text.literal(ok
+                        s.sendFeedback(Text.literal(ok
                             ? "§a[Tracker] Backend reachable."
                             : "§c[Tracker] Backend unreachable — queueing locally.")));
                     return 1;
                 }))
                 .then(ClientCommandManager.literal("web")
                     .executes(ctx -> DashboardControl.openDashboard(ctx.getSource()))
-                    .then(ClientCommandManager.literal("stop").executes(ctx ->
-                        DashboardControl.stopDashboard(ctx.getSource())))
-                    .then(ClientCommandManager.literal("restart").executes(ctx ->
-                        DashboardControl.restartDashboard(ctx.getSource()))));
+                    .then(ClientCommandManager.literal("stop")
+                        .executes(ctx -> DashboardControl.stopDashboard(ctx.getSource())))
+                    .then(ClientCommandManager.literal("restart")
+                        .executes(ctx -> DashboardControl.restartDashboard(ctx.getSource()))))
+            );
+
+            // §34: exchange an in-game code for a private dashboard session.
+            dispatcher.register(ClientCommandManager.literal("tracker")
+                .then(ClientCommandManager.literal("link").executes(ctx -> {
+                    var s = ctx.getSource();
+                    var mc = MinecraftClient.getInstance();
+                    String username = mc.getSession().getUsername();
+                    s.sendFeedback(Text.literal("§7[Tracker] Requesting a link code..."));
+                    // Chat must be touched on the client thread; the HTTP call runs off it.
+                    SyncService.requestLinkCode(username).thenAccept(msg ->
+                        mc.execute(() -> s.sendFeedback(Text.literal(msg))));
+                    return 1;
+                }))
+            );
         });
     }
 }

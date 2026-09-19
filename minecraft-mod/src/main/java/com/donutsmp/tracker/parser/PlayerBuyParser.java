@@ -4,30 +4,29 @@ import com.donutsmp.tracker.model.*;
 import java.util.Optional;
 import java.util.regex.*;
 
-public class ListingParser implements MessageParser {
-    // "You listed 7 Emerald for $ 39K"
-    // "RealSwitchy listed 64 Dried Kelp Block for $ 59K"
+public class PlayerBuyParser implements MessageParser {
+    // "qzweel_ bought 1 Soul Sand for $ 1K"   (another player, observed)
     private static final Pattern P = Pattern.compile(
-            "^(?<owner>You|[A-Za-z0-9_]{1,16})\\s+listed\\s+(?<qty>[\\d,]+)\\s+(?<item>.+?)\\s+for\\s+\\$\\s*(?<price>.+?)\\s*$",
+            "^(?!you\\b)(?<buyer>[A-Za-z0-9_]{1,16})\\s+bought\\s+(?<qty>[\\d,]+)\\s+(?<item>.+?)\\s+for\\s+\\$\\s*(?<price>[\\d.,]+\\s*[KkMmBbTt]?)\\s*$",
             Pattern.CASE_INSENSITIVE);
 
     @Override
     public Optional<TransactionRecord> tryParse(String msg, ParserContext ctx) {
         Matcher m = P.matcher(msg);
         if (!m.matches()) return Optional.empty();
-        String ownerRaw = m.group("owner");
-        boolean local = ownerRaw.equalsIgnoreCase("You");
-        String owner = local ? ctx.localPlayer() : ownerRaw;
-
+        String buyer = m.group("buyer");
         TransactionRecord t = new TransactionRecord();
-        t.transaction_type = "LIST";
+        t.transaction_type = "BUY";
         t.source = "CHAT";
-        t.transaction_owner = owner;             // §10/§11: never reassign to local
+        t.transaction_owner = buyer;             // §10/§11: observed player, never local
         t.observed_by = ctx.localPlayer();
-        t.seller_username = owner;               // listing seller = lister; buyer unknown
+        t.buyer_username = buyer;
+        t.seller_username = null;                // §41: seller not stated
         t.quantity = QtyUtil.parse(m.group("qty"));
         t.item_name = m.group("item").trim();
         t.total_price = MoneyUtil.parse(m.group("price"));
+        t.money_paid = null;                     // §10: not the local player's cash flow
+        t.money_received = null;
         t.raw_message = ctx.rawMessage();
         t.normalized_message = msg;
         t.minecraft_timestamp = ctx.minecraftTimestamp();
